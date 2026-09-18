@@ -32,6 +32,25 @@ JevResponse response = jev.evaluate(
 );
 ```
 
+## Vercel AI Gateway
+
+Jev is also available through the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/modalities/evaluation),
+which is handy while direct TypeSafe API access is waitlisted. Use an AI Gateway
+API key (`vck_...`) and enable gateway mode on the builder — the rest of the API
+is unchanged:
+
+```java
+JevClient jev = JevClient.builder()
+    .apiKey(System.getenv("AI_GATEWAY_API_KEY"))
+    .vercelGateway()
+    .build();
+```
+
+Notes:
+- The gateway model id defaults to `typesafe-ai/jev` and can be overridden with `.gatewayModel(...)`.
+- `Score` requires a `legend` (ordered levels) in gateway mode; plain `min`/`max`
+  ranges are only supported by the native TypeSafe API.
+
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.olti1947/jev-java.svg)](https://central.sonatype.com/artifact/io.github.olti1947/jev-java)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://github.com/Olti1947/jev-java/actions/workflows/publish.yml/badge.svg)](https://github.com/Olti1947/jev-java/actions)
