@@ -31,3 +31,7 @@ JevResponse response = jev.evaluate(
     )
 );
 ```
+
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.olti1947/jev-java.svg)](https://central.sonatype.com/artifact/io.github.olti1947/jev-java)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://github.com/Olti1947/jev-java/actions/workflows/publish.yml/badge.svg)](https://github.com/Olti1947/jev-java/actions)
