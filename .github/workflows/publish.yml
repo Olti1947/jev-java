@@ -10,12 +10,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 17 & Generate Maven Settings
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_PASSWORD
 
       - name: Import GPG Key
         uses: crazy-max/ghaction-import-gpg@v6
@@ -27,8 +30,4 @@ jobs:
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-        run: |
-          mvn --batch-mode clean deploy \
-            -DskipTests \
-            -Dcentral.username=$MAVEN_CENTRAL_USERNAME \
-            -Dcentral.password=$MAVEN_CENTRAL_PASSWORD
+        run: mvn --batch-mode clean deploy -DskipTests
