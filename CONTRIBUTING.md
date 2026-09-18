@@ -27,7 +27,11 @@ Feature requests are welcome! Please open an issue with the tag `enhancement` an
 - The problem your proposed feature solves.
 - How you envision the API usage looking in practice.
 
-### 3. Submitting Pull Requests
+### 3.Work on Open Issues
+Please comment under open issues that you would like to contribute to.
+The repo owners will look at it and assign you them so you can start working on them.
+
+### 4. Submitting Pull Requests
 1. **Fork the repository** and create your branch from `main`:
    ```bash
    git checkout -b feature/my-new-feature
