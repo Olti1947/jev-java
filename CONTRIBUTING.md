@@ -11,6 +11,7 @@ Please help us keep this project open, welcoming, and inclusive. Treat all contr
 ---
 
 ## How Can I Contribute?
+Before making a PR please create a new issue.
 
 ### 1. Reporting Bugs
 Before opening a new issue, please check the existing issues to see if the bug has already been reported.
