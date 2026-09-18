@@ -7,7 +7,7 @@ Idiomatic Java 17+ client library for TypeSafe AI's **Jev** System One decision 
 ### Maven
 ```xml
 <dependency>
-    <groupId>io.github.yourusername</groupId>
+    <groupId>io.github.olti1947</groupId>
     <artifactId>jev-java</artifactId>
     <version>1.0.0</version>
 </dependency>
@@ -15,7 +15,7 @@ Idiomatic Java 17+ client library for TypeSafe AI's **Jev** System One decision 
 
 ### Gradle
 ```groovy
-implementation 'io.github.yourusername:jev-java:1.0.0'
+implementation 'io.github.olti1947:jev-java:1.0.0'
 ```
 
 ## Quick Start
