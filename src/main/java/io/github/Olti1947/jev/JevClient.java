@@ -21,12 +21,18 @@ import java.util.concurrent.CompletableFuture;
 public class JevClient {
     private final String apiKey;
     private final String baseUrl;
+    private final boolean vercelGateway;
+    private final String gatewayModel;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     private JevClient(Builder builder) {
         this.apiKey = builder.apiKey;
-        this.baseUrl = builder.baseUrl;
+        this.vercelGateway = builder.vercelGateway;
+        this.gatewayModel = builder.gatewayModel;
+        this.baseUrl = builder.baseUrl != null
+                ? builder.baseUrl
+                : (vercelGateway ? GatewayProtocol.DEFAULT_BASE_URL : "https://api.typesafe.ai");
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(builder.timeout)
                 .build();
@@ -38,17 +44,9 @@ public class JevClient {
      * Executes a synchronous evaluation over state using the specified primitives.
      */
     public JevResponse evaluate(Object state, List<JevPrimitive> primitives) {
-        JevRequest request = new JevRequest(state, primitives);
         try {
-            String jsonBody = objectMapper.writeValueAsString(request);
-
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/v1/systemone"))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("User-Agent", "jev-java-sdk/1.0.0")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
+            HttpRequest httpRequest = buildHttpRequest(state, primitives);
+            long start = System.nanoTime();
 
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
@@ -56,7 +54,7 @@ public class JevClient {
                 throw new JevApiException(response.statusCode(), response.body());
             }
 
-            return objectMapper.readValue(response.body(), JevResponse.class);
+            return parseResponse(response.body(), primitives, (System.nanoTime() - start) / 1_000_000);
         } catch (JevApiException e) {
             throw e;
         } catch (Exception e) {
@@ -68,17 +66,9 @@ public class JevClient {
      * Executes an asynchronous evaluation returning a CompletableFuture.
      */
     public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
-        JevRequest request = new JevRequest(state, primitives);
         try {
-            String jsonBody = objectMapper.writeValueAsString(request);
-
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/v1/systemone"))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("User-Agent", "jev-java-sdk/1.0.0")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
+            HttpRequest httpRequest = buildHttpRequest(state, primitives);
+            long start = System.nanoTime();
 
             return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
                     .thenApply(response -> {
@@ -86,7 +76,7 @@ public class JevClient {
                             throw new JevApiException(response.statusCode(), response.body());
                         }
                         try {
-                            return objectMapper.readValue(response.body(), JevResponse.class);
+                            return parseResponse(response.body(), primitives, (System.nanoTime() - start) / 1_000_000);
                         } catch (Exception e) {
                             throw new JevSerializationException("Failed to deserialize response", e);
                         }
@@ -94,6 +84,38 @@ public class JevClient {
         } catch (Exception e) {
             return CompletableFuture.failedFuture(new JevSerializationException("Failed to serialize request", e));
         }
+    }
+
+    private HttpRequest buildHttpRequest(Object state, List<JevPrimitive> primitives) throws Exception {
+        String jsonBody;
+        HttpRequest.Builder request;
+
+        if (vercelGateway) {
+            jsonBody = objectMapper.writeValueAsString(GatewayProtocol.buildBody(objectMapper, state, primitives));
+            request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/evaluation-model"))
+                    .header("ai-gateway-protocol-version", GatewayProtocol.PROTOCOL_VERSION)
+                    .header("ai-evaluation-model-specification-version", GatewayProtocol.SPEC_VERSION)
+                    .header("ai-model-id", gatewayModel);
+        } else {
+            jsonBody = objectMapper.writeValueAsString(new JevRequest(state, primitives));
+            request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/v1/systemone"));
+        }
+
+        return request
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .header("User-Agent", "jev-java-sdk/1.0.0")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+    }
+
+    private JevResponse parseResponse(String body, List<JevPrimitive> primitives, long latencyMs) throws Exception {
+        if (vercelGateway) {
+            return GatewayProtocol.parseResponse(objectMapper.readTree(body), primitives, latencyMs);
+        }
+        return objectMapper.readValue(body, JevResponse.class);
     }
 
     /**
@@ -121,7 +143,9 @@ public class JevClient {
 
     public static class Builder {
         private String apiKey;
-        private String baseUrl = "https://api.typesafe.ai";
+        private String baseUrl;
+        private boolean vercelGateway;
+        private String gatewayModel = "typesafe-ai/jev";
         private Duration timeout = Duration.ofSeconds(10);
 
         public Builder apiKey(String apiKey) {
@@ -131,6 +155,24 @@ public class JevClient {
 
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Routes requests through the Vercel AI Gateway instead of the native
+         * TypeSafe API. Use an AI Gateway API key (vck_...) as {@code apiKey}.
+         */
+        public Builder vercelGateway() {
+            this.vercelGateway = true;
+            return this;
+        }
+
+        /**
+         * Gateway model id to evaluate against (default "typesafe-ai/jev").
+         * Only used together with {@link #vercelGateway()}.
+         */
+        public Builder gatewayModel(String gatewayModel) {
+            this.gatewayModel = gatewayModel;
             return this;
         }
 
