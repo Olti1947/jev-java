@@ -63,16 +63,10 @@ final class GatewayProtocol {
             }
         } else if (primitive instanceof Score score) {
             question.put("type", "score");
-            if (score.legend() == null || score.legend().size() < 2) {
-                throw new JevValidationException(
-                        "Score over the gateway requires a legend with at least two ordered levels; "
-                                + "min/max ranges are only supported by the native TypeSafe API.");
-            }
+            // The Score model guarantees 2..10 ordered levels, which is exactly
+            // what the gateway's score question takes.
             var criteria = question.putArray("criteria");
-            score.legend().forEach((label, description) ->
-                    criteria.add(description == null || description.isBlank()
-                            ? label
-                            : label + ": " + description));
+            score.criteria().forEach(criteria::add);
         } else {
             throw new JevValidationException("Unsupported primitive type: " + primitive.getClass());
         }

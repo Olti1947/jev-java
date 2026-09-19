@@ -3,7 +3,6 @@ package io.github.Olti1947.jev;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.Olti1947.jev.exception.JevValidationException;
 import io.github.Olti1947.jev.model.Choice;
 import io.github.Olti1947.jev.model.JevPrimitive;
 import io.github.Olti1947.jev.model.JevResponse;
@@ -11,14 +10,12 @@ import io.github.Olti1947.jev.model.Noul;
 import io.github.Olti1947.jev.model.Score;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GatewayProtocolTest {
@@ -57,25 +54,15 @@ class GatewayProtocolTest {
     }
 
     @Test
-    void buildBodyMapsScoreLegendToOrderedArray() {
-        Map<String, String> legend = new LinkedHashMap<>();
-        legend.put("calm", "no frustration");
-        legend.put("angry", "strong frustration");
-
+    void buildBodyMapsScoreCriteriaToOrderedArray() {
         ObjectNode body = GatewayProtocol.buildBody(mapper, "state",
-                List.of(new Score("mood", "Rate the mood", legend)));
+                List.of(new Score("mood", "Rate the mood",
+                        List.of("no frustration", "strong frustration"))));
 
         JsonNode criteria = body.get("questions").get("mood").get("criteria");
         assertTrue(criteria.isArray());
-        assertEquals("calm: no frustration", criteria.get(0).asText());
-        assertEquals("angry: strong frustration", criteria.get(1).asText());
-    }
-
-    @Test
-    void buildBodyRejectsScoreWithoutLegend() {
-        Score minMaxScore = new Score("mood", "Rate the mood", 0, 10);
-        assertThrows(JevValidationException.class,
-                () -> GatewayProtocol.buildBody(mapper, "state", List.of(minMaxScore)));
+        assertEquals("no frustration", criteria.get(0).asText());
+        assertEquals("strong frustration", criteria.get(1).asText());
     }
 
     @Test
@@ -91,13 +78,10 @@ class GatewayProtocolTest {
                   "providerMetadata": {"gateway": {"generationId": "gen_123"}}
                 }
                 """;
-        Map<String, String> legend = new LinkedHashMap<>();
-        legend.put("calm", "");
-        legend.put("angry", "");
         List<JevPrimitive> primitives = List.of(
                 new Noul("is_angry", "angry?"),
                 new Choice("intent", "classify", List.of("billing", "support")),
-                new Score("mood", "rate", legend));
+                new Score("mood", "rate", "calm", "angry"));
 
         JevResponse response = GatewayProtocol.parseResponse(mapper.readTree(json), primitives, 123);
 
