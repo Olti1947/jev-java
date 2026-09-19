@@ -11,6 +11,7 @@ import io.github.Olti1947.jev.model.Noul;
 import io.github.Olti1947.jev.model.NoulAnswer;
 import io.github.Olti1947.jev.model.Score;
 import io.github.Olti1947.jev.model.ScoreAnswer;
+import io.github.Olti1947.jev.model.ScoreLevel;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -121,7 +122,7 @@ final class GatewayProtocol {
         }
         Map<String, String> legend = new LinkedHashMap<>();
         for (int i = 0; i < score.criteria().size(); i++) {
-            legend.put(String.valueOf(i), score.criteria().get(i));
+            legend.put(String.valueOf(i), ScoreLevel.describe(score.criteria().get(i)));
         }
         return legend;
     }
