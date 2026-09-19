@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.Olti1947.jev.model.Choice;
+import io.github.Olti1947.jev.model.ChoiceAnswer;
 import io.github.Olti1947.jev.model.JevPrimitive;
 import io.github.Olti1947.jev.model.JevResponse;
 import io.github.Olti1947.jev.model.Noul;
+import io.github.Olti1947.jev.model.NoulAnswer;
 import io.github.Olti1947.jev.model.Score;
+import io.github.Olti1947.jev.model.ScoreAnswer;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -30,34 +33,25 @@ class GatewayProtocolTest {
         JsonNode question = body.get("questions").get("is_angry");
         assertEquals("boolean", question.get("type").asText());
         assertEquals("Is the customer angry?", question.get("instructions").asText());
-        assertFalse(question.has("criteria"));
+        assertFalse(question.has("name"));
     }
 
     @Test
-    void buildBodyMapsChoiceOptionsToCriteria() {
+    void buildBodyKeepsChoiceCriteria() {
         ObjectNode body = GatewayProtocol.buildBody(mapper, "state",
-                List.of(new Choice("intent", "Classify", List.of("billing", "support"))));
+                List.of(new Choice("intent", "Classify",
+                        Map.of("billing", "payment problems"))));
 
-        JsonNode criteria = body.get("questions").get("intent").get("criteria");
-        assertEquals("billing", criteria.get("billing").asText());
-        assertEquals("support", criteria.get("support").asText());
+        JsonNode question = body.get("questions").get("intent");
+        assertEquals("choice", question.get("type").asText());
+        assertEquals("payment problems", question.get("criteria").get("billing").asText());
     }
 
     @Test
-    void buildBodyPrefersExplicitChoiceCriteria() {
-        Choice choice = new Choice("intent", "Classify", List.of("billing"),
-                Map.of("billing", "payment problems"));
-        ObjectNode body = GatewayProtocol.buildBody(mapper, "state", List.of(choice));
-
-        assertEquals("payment problems",
-                body.get("questions").get("intent").get("criteria").get("billing").asText());
-    }
-
-    @Test
-    void buildBodyMapsScoreCriteriaToOrderedArray() {
+    void buildBodyKeepsScoreCriteriaOrder() {
         ObjectNode body = GatewayProtocol.buildBody(mapper, "state",
                 List.of(new Score("mood", "Rate the mood",
-                        List.of("no frustration", "strong frustration"))));
+                        "no frustration", "strong frustration")));
 
         JsonNode criteria = body.get("questions").get("mood").get("criteria");
         assertTrue(criteria.isArray());
@@ -66,7 +60,7 @@ class GatewayProtocolTest {
     }
 
     @Test
-    void parseResponseMapsAnswersInRequestOrder() throws Exception {
+    void parseResponseMapsGatewayAnswersToNativeShape() throws Exception {
         String json = """
                 {
                   "answers": {
@@ -75,37 +69,39 @@ class GatewayProtocolTest {
                     "intent": {"type": "choice", "choice": "billing",
                                "probabilities": {"billing": 0.98, "support": 0.02}}
                   },
-                  "providerMetadata": {"gateway": {"generationId": "gen_123"}}
+                  "usage": {"inputTokens": 522, "outputTokens": 92},
+                  "providerMetadata": {"typesafe": {"confidence": {"intent": 1.0}}}
                 }
                 """;
         List<JevPrimitive> primitives = List.of(
                 new Noul("is_angry", "angry?"),
                 new Choice("intent", "classify", List.of("billing", "support")),
-                new Score("mood", "rate", "calm", "angry"));
+                new Score("mood", "rate", "calm", "annoyed", "angry"));
 
-        JevResponse response = GatewayProtocol.parseResponse(mapper.readTree(json), primitives, 123);
+        JevResponse response = GatewayProtocol.parseResponse(
+                mapper.readTree(json), primitives, "typesafe-ai/jev");
 
-        assertEquals("gen_123", response.id());
-        assertEquals(123, response.latencyMs());
-        assertEquals(3, response.results().size());
+        assertEquals("typesafe-ai/jev", response.model());
+        assertEquals(522, response.usage().inputTokens());
+        assertEquals(92, response.usage().outputTokens());
 
-        JevResponse.DecisionResult angry = response.results().get(0);
-        assertEquals("is_angry", angry.name());
-        assertEquals(0.97, angry.confidence());
+        NoulAnswer angry = response.noul("is_angry");
+        assertEquals(0.97, angry.noul());
         assertTrue(angry.isTrue(0.9));
 
-        JevResponse.DecisionResult intent = response.results().get(1);
-        assertEquals("billing", intent.value());
-        assertEquals(0.98, intent.confidence());
+        ChoiceAnswer intent = response.choice("intent");
+        assertEquals("billing", intent.choice());
+        assertEquals(1.0, intent.confidence(), "confidence comes from provider metadata");
         assertEquals(0.02, intent.probabilities().get("support"));
 
-        JevResponse.DecisionResult mood = response.results().get(2);
+        ScoreAnswer mood = response.score("mood");
         assertEquals(1.9, mood.score());
-        assertEquals(0.9, mood.confidence());
+        assertEquals(0.9, mood.confidence(), "falls back to the top level probability");
+        assertEquals("angry", mood.legend().get("2"), "legend is rebuilt from the request criteria");
     }
 
     @Test
-    void parseResponseSkipsMissingAnswersAndHandlesAbsentMetadata() throws Exception {
+    void parseResponseSkipsMissingAnswers() throws Exception {
         String json = """
                 {"answers": {"is_angry": {"type": "boolean", "probability": 0.5}}}
                 """;
@@ -113,10 +109,10 @@ class GatewayProtocolTest {
                 new Noul("is_angry", "angry?"),
                 new Noul("not_answered", "missing?"));
 
-        JevResponse response = GatewayProtocol.parseResponse(mapper.readTree(json), primitives, 1);
+        JevResponse response = GatewayProtocol.parseResponse(
+                mapper.readTree(json), primitives, "typesafe-ai/jev");
 
-        assertNull(response.id());
-        assertEquals(1, response.results().size());
-        assertEquals("is_angry", response.results().get(0).name());
+        assertEquals(1, response.answers().size());
+        assertNull(response.answer("not_answered"));
     }
 }

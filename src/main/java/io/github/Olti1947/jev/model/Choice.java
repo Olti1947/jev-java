@@ -1,35 +1,54 @@
 package io.github.Olti1947.jev.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.Olti1947.jev.exception.JevValidationException;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Choice primitive for multi-class classification from a set of predefined options.
+ * Choice primitive selecting one option from a predefined set.
+ *
+ * <p>{@code criteria} maps each option name to a description of when it
+ * applies. A description may be {@code null} when the option name is
+ * self-explanatory. The API returns the selected option together with a
+ * probability for every option.
  */
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public record Choice(
-        String name,
+        @JsonIgnore String name,
         String instructions,
-        List<String> options,
         Map<String, String> criteria
 ) implements JevPrimitive {
+
+    public static final int MAX_OPTIONS = 255;
 
     public Choice {
         if (name == null || name.isBlank()) {
             throw new JevValidationException("Choice 'name' must not be blank.");
         }
-        if (options == null || options.isEmpty()) {
-            throw new JevValidationException("Choice primitive requires at least one option.");
+        if (criteria == null || criteria.isEmpty()) {
+            throw new JevValidationException("Choice requires at least one option in 'criteria'.");
         }
-        if (options.size() > 255) {
-            throw new JevValidationException("Choice primitive supports a maximum of 255 options.");
+        if (criteria.size() > MAX_OPTIONS) {
+            throw new JevValidationException(
+                    "Choice supports a maximum of " + MAX_OPTIONS + " options.");
         }
     }
 
+    /**
+     * Convenience constructor for options without descriptions.
+     */
     public Choice(String name, String instructions, List<String> options) {
-        this(name, instructions, options, null);
+        this(name, instructions, toCriteria(options));
+    }
+
+    private static Map<String, String> toCriteria(List<String> options) {
+        if (options == null) {
+            return null;
+        }
+        Map<String, String> criteria = new LinkedHashMap<>();
+        options.forEach(option -> criteria.put(option, null));
+        return criteria;
     }
 }

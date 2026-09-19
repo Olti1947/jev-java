@@ -1,6 +1,6 @@
 package io.github.Olti1947.jev.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.Olti1947.jev.exception.JevValidationException;
 
 import java.util.Arrays;
@@ -14,9 +14,8 @@ import java.util.List;
  * the first entry is level 0, the second level 1, and so on. The API returns an
  * interpolated score across those levels (e.g. {@code 1.94}).
  */
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public record Score(
-        String name,
+        @JsonIgnore String name,
         String instructions,
         List<String> criteria
 ) implements JevPrimitive {

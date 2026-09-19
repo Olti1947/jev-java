@@ -46,7 +46,6 @@ public class JevClient {
     public JevResponse evaluate(Object state, List<JevPrimitive> primitives) {
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
-            long start = System.nanoTime();
 
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
@@ -54,7 +53,7 @@ public class JevClient {
                 throw new JevApiException(response.statusCode(), response.body());
             }
 
-            return parseResponse(response.body(), primitives, (System.nanoTime() - start) / 1_000_000);
+            return parseResponse(response.body(), primitives);
         } catch (JevApiException e) {
             throw e;
         } catch (Exception e) {
@@ -68,7 +67,6 @@ public class JevClient {
     public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
-            long start = System.nanoTime();
 
             return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
                     .thenApply(response -> {
@@ -76,7 +74,7 @@ public class JevClient {
                             throw new JevApiException(response.statusCode(), response.body());
                         }
                         try {
-                            return parseResponse(response.body(), primitives, (System.nanoTime() - start) / 1_000_000);
+                            return parseResponse(response.body(), primitives);
                         } catch (Exception e) {
                             throw new JevSerializationException("Failed to deserialize response", e);
                         }
@@ -111,9 +109,9 @@ public class JevClient {
                 .build();
     }
 
-    private JevResponse parseResponse(String body, List<JevPrimitive> primitives, long latencyMs) throws Exception {
+    private JevResponse parseResponse(String body, List<JevPrimitive> primitives) throws Exception {
         if (vercelGateway) {
-            return GatewayProtocol.parseResponse(objectMapper.readTree(body), primitives, latencyMs);
+            return GatewayProtocol.parseResponse(objectMapper.readTree(body), primitives, gatewayModel);
         }
         return objectMapper.readValue(body, JevResponse.class);
     }
@@ -129,8 +127,7 @@ public class JevClient {
         Choice choice = new Choice("choice", instructions, options);
         JevResponse response = evaluate(state, List.of(choice));
 
-        String value = response.results().get(0).value();
-        return Enum.valueOf(enumClass, value);
+        return Enum.valueOf(enumClass, response.choice("choice").choice());
     }
 
     public static Builder builder() {

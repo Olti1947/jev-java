@@ -3,21 +3,28 @@ package io.github.Olti1947.jev;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.Olti1947.jev.exception.JevValidationException;
-import io.github.Olti1947.jev.model.Choice;
+import io.github.Olti1947.jev.model.ChoiceAnswer;
+import io.github.Olti1947.jev.model.JevAnswer;
 import io.github.Olti1947.jev.model.JevPrimitive;
 import io.github.Olti1947.jev.model.JevResponse;
 import io.github.Olti1947.jev.model.Noul;
+import io.github.Olti1947.jev.model.NoulAnswer;
 import io.github.Olti1947.jev.model.Score;
+import io.github.Olti1947.jev.model.ScoreAnswer;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Translates between Jev's native primitives and the Vercel AI Gateway
- * evaluation-model wire protocol (spec version 4).
+ * Translates between Jev's native wire format and the Vercel AI Gateway
+ * evaluation-model protocol (spec version 4).
+ *
+ * <p>The two formats are nearly identical: both send {@code {state, questions}}
+ * with questions keyed by name. The differences are that the gateway calls the
+ * noul type {@code boolean} (answering with {@code probability} instead of
+ * {@code noul}), takes the model id as a header rather than a body field, and
+ * reports usage in camelCase.
  */
 final class GatewayProtocol {
 
@@ -29,7 +36,7 @@ final class GatewayProtocol {
     }
 
     /**
-     * Builds the gateway request body: {"state": ..., "questions": {name: question}}.
+     * Builds the gateway request body: {@code {"state": ..., "questions": {name: question}}}.
      */
     static ObjectNode buildBody(ObjectMapper mapper, Object state, List<JevPrimitive> primitives) {
         ObjectNode body = mapper.createObjectNode();
@@ -37,89 +44,86 @@ final class GatewayProtocol {
 
         ObjectNode questions = body.putObject("questions");
         for (JevPrimitive primitive : primitives) {
-            questions.set(primitive.name(), toQuestion(mapper, primitive));
+            ObjectNode question = mapper.valueToTree(primitive);
+            if (primitive instanceof Noul) {
+                question.put("type", "boolean");
+            }
+            questions.set(primitive.name(), question);
         }
         return body;
     }
 
-    private static ObjectNode toQuestion(ObjectMapper mapper, JevPrimitive primitive) {
-        ObjectNode question = mapper.createObjectNode();
-        question.put("instructions", primitive.instructions());
-
-        if (primitive instanceof Choice choice) {
-            question.put("type", "choice");
-            ObjectNode criteria = question.putObject("criteria");
-            if (choice.criteria() != null && !choice.criteria().isEmpty()) {
-                choice.criteria().forEach(criteria::put);
-            } else {
-                // The gateway requires option descriptions; fall back to the option name itself.
-                choice.options().forEach(option -> criteria.put(option, option));
-            }
-        } else if (primitive instanceof Noul noul) {
-            question.put("type", "boolean");
-            if (noul.criteria() != null && !noul.criteria().isEmpty()) {
-                ObjectNode criteria = question.putObject("criteria");
-                noul.criteria().forEach(criteria::put);
-            }
-        } else if (primitive instanceof Score score) {
-            question.put("type", "score");
-            // The Score model guarantees 2..10 ordered levels, which is exactly
-            // what the gateway's score question takes.
-            var criteria = question.putArray("criteria");
-            score.criteria().forEach(criteria::add);
-        } else {
-            throw new JevValidationException("Unsupported primitive type: " + primitive.getClass());
-        }
-        return question;
-    }
-
     /**
-     * Maps the gateway response back onto Jev's native {@link JevResponse} shape.
-     * Result order follows the request's primitive order.
+     * Maps the gateway response onto the native {@link JevResponse} shape.
      */
-    static JevResponse parseResponse(JsonNode root, List<JevPrimitive> primitives, long latencyMs) {
+    static JevResponse parseResponse(JsonNode root, List<JevPrimitive> primitives, String model) {
         JsonNode answers = root.path("answers");
-        List<JevResponse.DecisionResult> results = new ArrayList<>();
+        JsonNode confidences = root.path("providerMetadata").path("typesafe").path("confidence");
 
+        Map<String, JevAnswer> mapped = new LinkedHashMap<>();
         for (JevPrimitive primitive : primitives) {
             JsonNode answer = answers.path(primitive.name());
             if (answer.isMissingNode()) {
                 continue;
             }
-            results.add(toDecisionResult(primitive.name(), answer));
+            double confidence = confidences.path(primitive.name()).asDouble(Double.NaN);
+            mapped.put(primitive.name(), toAnswer(primitive, answer, confidence));
         }
 
-        JsonNode idNode = root.path("providerMetadata").path("gateway").path("generationId");
-        String id = idNode.isTextual() ? idNode.asText() : null;
-        return new JevResponse(id, results, latencyMs);
+        JsonNode usage = root.path("usage");
+        return new JevResponse(model, mapped, new JevResponse.Usage(
+                usage.path("inputTokens").asLong(),
+                usage.path("outputTokens").asLong()));
     }
 
-    private static JevResponse.DecisionResult toDecisionResult(String name, JsonNode answer) {
-        String type = answer.path("type").asText();
-        Map<String, Double> probabilities = readProbabilities(answer.path("probabilities"));
-
-        return switch (type) {
-            case "boolean" -> {
-                double probability = answer.path("probability").asDouble();
-                yield new JevResponse.DecisionResult(
-                        name, String.valueOf(probability), probability, null, null);
-            }
+    private static JevAnswer toAnswer(JevPrimitive primitive, JsonNode answer, double confidence) {
+        return switch (answer.path("type").asText()) {
+            case "boolean" -> new NoulAnswer(answer.path("probability").asDouble());
             case "choice" -> {
+                Map<String, Double> probabilities = readProbabilities(answer.path("probabilities"));
                 String choice = answer.path("choice").asText();
-                double confidence = probabilities != null
-                        ? probabilities.getOrDefault(choice, 0.0)
-                        : 0.0;
-                yield new JevResponse.DecisionResult(name, choice, confidence, null, probabilities);
+                yield new ChoiceAnswer(choice,
+                        fallbackConfidence(confidence, probabilities == null ? null : probabilities.get(choice)),
+                        probabilities);
             }
             case "score" -> {
-                double score = answer.path("score").asDouble();
-                double confidence = probabilities == null ? 0.0
-                        : probabilities.values().stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
-                yield new JevResponse.DecisionResult(
-                        name, String.valueOf(score), confidence, score, probabilities);
+                Map<String, Double> probabilities = readProbabilities(answer.path("probabilities"));
+                Double top = probabilities == null ? null
+                        : probabilities.values().stream().max(Double::compareTo).orElse(null);
+                yield new ScoreAnswer(answer.path("score").asDouble(),
+                        fallbackConfidence(confidence, top),
+                        probabilities,
+                        legendOf(primitive));
             }
-            default -> new JevResponse.DecisionResult(name, answer.toString(), 0.0, null, null);
+            default -> throw new IllegalStateException(
+                    "Unexpected gateway answer type: " + answer.path("type").asText());
         };
+    }
+
+    /**
+     * The gateway reports confidence in provider metadata rather than on the
+     * answer; when absent, fall back to the top option's probability.
+     */
+    private static double fallbackConfidence(double metadataConfidence, Double topProbability) {
+        if (!Double.isNaN(metadataConfidence)) {
+            return metadataConfidence;
+        }
+        return topProbability == null ? 0.0 : topProbability;
+    }
+
+    /**
+     * Rebuilds the native score legend (level number -> description) from the
+     * request's criteria, which the gateway does not echo back.
+     */
+    private static Map<String, String> legendOf(JevPrimitive primitive) {
+        if (!(primitive instanceof Score score)) {
+            return null;
+        }
+        Map<String, String> legend = new LinkedHashMap<>();
+        for (int i = 0; i < score.criteria().size(); i++) {
+            legend.put(String.valueOf(i), score.criteria().get(i));
+        }
+        return legend;
     }
 
     private static Map<String, Double> readProbabilities(JsonNode node) {

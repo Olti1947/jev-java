@@ -1,5 +1,6 @@
 package io.github.Olti1947.jev.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.github.Olti1947.jev.exception.JevValidationException;
 
@@ -10,7 +11,7 @@ import java.util.Map;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Noul(
-        String name,
+        @JsonIgnore String name,
         String instructions,
         Map<String, String> criteria
 ) implements JevPrimitive {
