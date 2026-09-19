@@ -9,8 +9,10 @@ import io.github.Olti1947.jev.model.JevPrimitive;
 import io.github.Olti1947.jev.model.JevResponse;
 import io.github.Olti1947.jev.model.Noul;
 import io.github.Olti1947.jev.model.NoulAnswer;
+import io.github.Olti1947.jev.model.Rubric;
 import io.github.Olti1947.jev.model.Score;
 import io.github.Olti1947.jev.model.ScoreAnswer;
+import io.github.Olti1947.jev.model.ScoreLevel;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -98,6 +100,42 @@ class GatewayProtocolTest {
         assertEquals(1.9, mood.score());
         assertEquals(0.9, mood.confidence(), "falls back to the top level probability");
         assertEquals("angry", mood.legend().get("2"), "legend is rebuilt from the request criteria");
+    }
+
+    @Test
+    void parseResponseDescribesStructuredScoreLevelsInLegend() throws Exception {
+        String json = """
+                {"answers": {"mood": {"type": "score", "score": 1.0,
+                                      "probabilities": {"0": 0.1, "1": 0.8, "2": 0.1}}}}
+                """;
+        JevPrimitive mood = Score.builder("mood")
+                .instructions("rate")
+                .addCriteriaLevel("calm")
+                .addCriteriaLevel(new ScoreLevel("annoyed", List.of("short replies")))
+                .addCriteriaLevel(Map.of("signals", List.of("shouting", "threats")))
+                .build();
+
+        JevResponse response = GatewayProtocol.parseResponse(
+                mapper.readTree(json), List.of(mood), "typesafe-ai/jev");
+
+        Map<String, String> legend = response.score("mood").legend();
+        assertEquals("calm", legend.get("0"));
+        assertEquals("annoyed", legend.get("1"), "structured levels are described by their summary");
+        assertEquals("shouting; threats", legend.get("2"), "falls back to the signals without a summary");
+    }
+
+    @Test
+    void buildBodyKeepsStructuredCriteria() {
+        ObjectNode body = GatewayProtocol.buildBody(mapper, "state", List.of(
+                Noul.builder("is_angry")
+                        .instructions(Map.of("question", "Is the customer angry?"))
+                        .criteria(Rubric.of("Clearly angry"), Rubric.of("Calm"))
+                        .build()));
+
+        JsonNode question = body.get("questions").get("is_angry");
+        assertEquals("boolean", question.get("type").asText());
+        assertEquals("Is the customer angry?", question.get("instructions").get("question").asText());
+        assertEquals("Clearly angry", question.get("criteria").get("true").get("what").asText());
     }
 
     @Test

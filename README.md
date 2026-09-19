@@ -37,6 +37,52 @@ response.noul("is_angry").noul();          // 0.79
 response.noul("is_angry").isTrue(0.7);     // true
 ```
 
+## Structured instructions and criteria
+
+Everywhere a primitive takes a string, it also accepts a structured value. Plain
+strings keep working exactly as before; use structured values when you need to
+give Jev richer context. See the
+[advanced primitives docs](https://docs.typesafe.ai/primitives/advanced).
+
+```java
+// Structured instructions: any map (question, focus, inspect, field, ...)
+Noul invoiceCheck = Noul.builder("invoice_number_is_correct")
+    .instructions(Map.of(
+        "field", Map.of("name", "invoice_number", "type", "string"),
+        "extracted_value", "4471",
+        "question", "Does `extracted_value` match the `field` as it appears in `source_text`?"))
+    .build();
+
+// Choice options with what / not_for / examples boundaries
+Choice department = Choice.builder("department")
+    .instructions(Map.of("question", "Which team should handle this message?"))
+    .candidate("billing", Rubric.of("Charges, invoices, refunds", "I was charged twice")
+        .notFor("Order tracking or account access"))
+    .candidate("orders", "Order status, delivery, or returns")   // strings still work
+    .candidate("other")                                          // no description
+    .build();
+
+// Score levels with a summary and signals (levels run low -> high)
+Score prScope = Score.builder("pr_scope")
+    .instructions("How focused is this pull request on a single change?")
+    .addCriteriaLevel(ScoreLevel.of("One change, clearly stated", "A single fix or feature"))
+    .addCriteriaLevel(ScoreLevel.of("Several changes bundled together", "Two or more unrelated fixes"))
+    .build();
+
+// Noul true / false boundaries
+Noul credentials = Noul.builder("requests_credentials")
+    .instructions("Does the message ask for a sensitive credential?")
+    .criteria(
+        Rubric.of("Asks the recipient to send a password or one-time code", "Send us the 6-digit code"),
+        Rubric.of("No sensitive credential is requested", "Reset your password from settings"))
+    .build();
+```
+
+`Rubric` and `ScoreLevel` are typed helpers, but any `Map`/`List` works too, so
+nested category maps and custom keys are supported. Constructors taking plain
+strings (`new Noul(name, "question")`, `new Score(name, "q", "low", "high")`) are
+unchanged.
+
 ## Vercel AI Gateway
 
 Jev is also available through the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/modalities/evaluation),
