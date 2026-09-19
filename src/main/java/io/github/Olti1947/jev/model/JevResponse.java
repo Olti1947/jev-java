@@ -3,43 +3,42 @@ package io.github.Olti1947.jev.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.List;
 import java.util.Map;
 
 /**
- * Structured response container returned by Jev.
+ * Response returned by Jev, matching the documented schema:
+ * {@code {"model": ..., "answers": {"<name>": Answer}, "usage": {...}}}.
+ * Answers are keyed by the question names from the request.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record JevResponse(
-        String id,
-        List<DecisionResult> results,
-        @JsonProperty("latency_ms") long latencyMs
+        String model,
+        Map<String, JevAnswer> answers,
+        Usage usage
 ) {
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record DecisionResult(
-            String name,
-            String value,
-            double confidence,
-            Double score,
-            Map<String, Double> probabilities
-    ) {
-        /**
-         * Convenience helper to convert value or confidence into a double probability.
-         */
-        public double asProbability() {
-            if (value != null) {
-                try {
-                    return Double.parseDouble(value);
-                } catch (NumberFormatException ignored) {}
-            }
-            return confidence;
-        }
+    /**
+     * The answer for the given question name, or {@code null} if absent.
+     */
+    public JevAnswer answer(String name) {
+        return answers == null ? null : answers.get(name);
+    }
 
-        /**
-         * Checks if a binary/noul evaluation passes a given threshold.
-         */
-        public boolean isTrue(double threshold) {
-            return asProbability() >= threshold;
-        }
+    public NoulAnswer noul(String name) {
+        return (NoulAnswer) answer(name);
+    }
+
+    public ChoiceAnswer choice(String name) {
+        return (ChoiceAnswer) answer(name);
+    }
+
+    public ScoreAnswer score(String name) {
+        return (ScoreAnswer) answer(name);
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Usage(
+            @JsonProperty("input_tokens") long inputTokens,
+            @JsonProperty("output_tokens") long outputTokens
+    ) {
     }
 }

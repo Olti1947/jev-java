@@ -27,9 +27,14 @@ JevResponse response = jev.evaluate(
     "Cancel my subscription immediately!",
     List.of(
         new Choice("intent", "Select classification", List.of("billing", "support", "cancel")),
-        new Noul("is_angry", "Is the customer express anger?")
+        new Noul("is_angry", "Is the customer expressing anger?")
     )
 );
+
+response.choice("intent").choice();        // "cancel"
+response.choice("intent").probabilities(); // {billing=0.01, support=0.0, cancel=0.99}
+response.noul("is_angry").noul();          // 0.79
+response.noul("is_angry").isTrue(0.7);     // true
 ```
 
 ## Vercel AI Gateway
