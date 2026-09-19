@@ -6,10 +6,12 @@ import io.github.Olti1947.jev.exception.JevApiException;
 import io.github.Olti1947.jev.exception.JevSerializationException;
 import io.github.Olti1947.jev.model.*;
 
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -32,10 +34,14 @@ public class JevClient {
         this.gatewayModel = builder.gatewayModel;
         this.baseUrl = builder.baseUrl != null
                 ? builder.baseUrl
-                : (vercelGateway ? GatewayProtocol.DEFAULT_BASE_URL : "https://api.typesafe.ai");
+                : (vercelGateway
+                    ? GatewayProtocol.DEFAULT_BASE_URL
+                    : "https://api.typesafe.ai");
+
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(builder.timeout)
                 .build();
+
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
@@ -47,56 +53,139 @@ public class JevClient {
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
-            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<InputStream> response =
+                    httpClient.send(
+                            httpRequest,
+                            HttpResponse.BodyHandlers.ofInputStream()
+                    );
 
             if (response.statusCode() != 200) {
-                throw new JevApiException(response.statusCode(), response.body());
+                String responseBody = new String(
+                        response.body().readAllBytes(),
+                        StandardCharsets.UTF_8
+                );
+                throw new JevApiException(response.statusCode(), responseBody);
             }
 
-            return parseResponse(response.body(), primitives);
+            if (vercelGateway) {
+                String responseBody = new String(
+                        response.body().readAllBytes(),
+                        StandardCharsets.UTF_8
+                );
+                return parseResponse(responseBody, primitives);
+            }
+
+            // Native API: deserialize directly from the response stream.
+            return objectMapper.readValue(response.body(), JevResponse.class);
+
         } catch (JevApiException e) {
             throw e;
         } catch (Exception e) {
-            throw new JevSerializationException("Failed to execute Jev request", e);
+            throw new JevSerializationException(
+                    "Failed to execute Jev request",
+                    e
+            );
         }
     }
 
     /**
      * Executes an asynchronous evaluation returning a CompletableFuture.
      */
-    public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
+    public CompletableFuture<JevResponse> evaluateAsync(
+            Object state,
+            List<JevPrimitive> primitives
+    ) {
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
-            return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
+            return httpClient
+                    .sendAsync(
+                            httpRequest,
+                            HttpResponse.BodyHandlers.ofInputStream()
+                    )
                     .thenApply(response -> {
-                        if (response.statusCode() != 200) {
-                            throw new JevApiException(response.statusCode(), response.body());
-                        }
                         try {
-                            return parseResponse(response.body(), primitives);
+                            if (response.statusCode() != 200) {
+                                String responseBody = new String(
+                                        response.body().readAllBytes(),
+                                        StandardCharsets.UTF_8
+                                );
+                                throw new JevApiException(
+                                        response.statusCode(),
+                                        responseBody
+                                );
+                            }
+
+                            if (vercelGateway) {
+                                String responseBody = new String(
+                                        response.body().readAllBytes(),
+                                        StandardCharsets.UTF_8
+                                );
+                                return parseResponse(
+                                        responseBody,
+                                        primitives
+                                );
+                            }
+
+                            // Native API: deserialize directly from the response stream.
+                            return objectMapper.readValue(
+                                    response.body(),
+                                    JevResponse.class
+                            );
+
+                        } catch (JevApiException e) {
+                            throw e;
                         } catch (Exception e) {
-                            throw new JevSerializationException("Failed to deserialize response", e);
+                            throw new JevSerializationException(
+                                    "Failed to deserialize response",
+                                    e
+                            );
                         }
                     });
+
         } catch (Exception e) {
-            return CompletableFuture.failedFuture(new JevSerializationException("Failed to serialize request", e));
+            return CompletableFuture.failedFuture(
+                    new JevSerializationException(
+                            "Failed to serialize request",
+                            e
+                    )
+            );
         }
     }
 
-    private HttpRequest buildHttpRequest(Object state, List<JevPrimitive> primitives) throws Exception {
+    private HttpRequest buildHttpRequest(
+            Object state,
+            List<JevPrimitive> primitives
+    ) throws Exception {
         String jsonBody;
         HttpRequest.Builder request;
 
         if (vercelGateway) {
-            jsonBody = objectMapper.writeValueAsString(GatewayProtocol.buildBody(objectMapper, state, primitives));
+            jsonBody = objectMapper.writeValueAsString(
+                    GatewayProtocol.buildBody(
+                            objectMapper,
+                            state,
+                            primitives
+                    )
+            );
+
             request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/evaluation-model"))
-                    .header("ai-gateway-protocol-version", GatewayProtocol.PROTOCOL_VERSION)
-                    .header("ai-evaluation-model-specification-version", GatewayProtocol.SPEC_VERSION)
+                    .header(
+                            "ai-gateway-protocol-version",
+                            GatewayProtocol.PROTOCOL_VERSION
+                    )
+                    .header(
+                            "ai-evaluation-model-specification-version",
+                            GatewayProtocol.SPEC_VERSION
+                    )
                     .header("ai-model-id", gatewayModel);
+
         } else {
-            jsonBody = objectMapper.writeValueAsString(new JevRequest(state, primitives));
+            jsonBody = objectMapper.writeValueAsString(
+                    new JevRequest(state, primitives)
+            );
+
             request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/v1/systemone"));
         }
@@ -109,25 +198,48 @@ public class JevClient {
                 .build();
     }
 
-    private JevResponse parseResponse(String body, List<JevPrimitive> primitives) throws Exception {
+    private JevResponse parseResponse(
+            String body,
+            List<JevPrimitive> primitives
+    ) throws Exception {
         if (vercelGateway) {
-            return GatewayProtocol.parseResponse(objectMapper.readTree(body), primitives, gatewayModel);
+            return GatewayProtocol.parseResponse(
+                    objectMapper.readTree(body),
+                    primitives,
+                    gatewayModel
+            );
         }
+
         return objectMapper.readValue(body, JevResponse.class);
     }
 
     /**
      * Helper method to map a Choice primitive directly to a Java Enum type.
      */
-    public <E extends Enum<E>> E evaluateChoice(Object state, String instructions, Class<E> enumClass) {
+    public <E extends Enum<E>> E evaluateChoice(
+            Object state,
+            String instructions,
+            Class<E> enumClass
+    ) {
         List<String> options = Arrays.stream(enumClass.getEnumConstants())
                 .map(Enum::name)
                 .toList();
 
-        Choice choice = new Choice("choice", instructions, options);
-        JevResponse response = evaluate(state, List.of(choice));
+        Choice choice = new Choice(
+                "choice",
+                instructions,
+                options
+        );
 
-        return Enum.valueOf(enumClass, response.choice("choice").choice());
+        JevResponse response = evaluate(
+                state,
+                List.of(choice)
+        );
+
+        return Enum.valueOf(
+                enumClass,
+                response.choice("choice").choice()
+        );
     }
 
     public static Builder builder() {
@@ -135,7 +247,9 @@ public class JevClient {
     }
 
     public static JevClient create(String apiKey) {
-        return builder().apiKey(apiKey).build();
+        return builder()
+                .apiKey(apiKey)
+                .build();
     }
 
     public static class Builder {
@@ -180,8 +294,11 @@ public class JevClient {
 
         public JevClient build() {
             if (apiKey == null || apiKey.isBlank()) {
-                throw new IllegalArgumentException("API Key must be provided.");
+                throw new IllegalArgumentException(
+                        "API Key must be provided."
+                );
             }
+
             return new JevClient(this);
         }
     }
