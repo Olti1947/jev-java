@@ -14,6 +14,8 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Entry-point client for interacting with the TypeSafe Jev System One API.
@@ -50,13 +52,18 @@ public class JevClient {
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<InputStream> response =
+        httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
 
-            if (response.statusCode() != 200) {
-                throw new JevApiException(response.statusCode(), response.body());
-            }
+if (response.statusCode() != 200) {
+    String responseBody = new String(
+            response.body().readAllBytes(),
+            StandardCharsets.UTF_8
+    );
+    throw new JevApiException(response.statusCode(), responseBody);
+}
 
-            return objectMapper.readValue(response.body(), JevResponse.class);
+return objectMapper.readValue(response.body(), JevResponse.class);
         } catch (JevApiException e) {
             throw e;
         } catch (Exception e) {
@@ -80,17 +87,27 @@ public class JevClient {
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .build();
 
-            return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(response -> {
-                        if (response.statusCode() != 200) {
-                            throw new JevApiException(response.statusCode(), response.body());
-                        }
-                        try {
-                            return objectMapper.readValue(response.body(), JevResponse.class);
-                        } catch (Exception e) {
-                            throw new JevSerializationException("Failed to deserialize response", e);
-                        }
-                    });
+           return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofInputStream())
+        .thenApply(response -> {
+            try {
+                if (response.statusCode() != 200) {
+                    String responseBody = new String(
+                            response.body().readAllBytes(),
+                            StandardCharsets.UTF_8
+                    );
+                    throw new JevApiException(response.statusCode(), responseBody);
+                }
+
+                return objectMapper.readValue(response.body(), JevResponse.class);
+
+            } catch (JevApiException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new JevSerializationException(
+                        "Failed to deserialize response", e
+                );
+            }
+        });
         } catch (Exception e) {
             return CompletableFuture.failedFuture(new JevSerializationException("Failed to serialize request", e));
         }
