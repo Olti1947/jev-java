@@ -23,4 +23,13 @@ class JevClientTest {
                 JevClient.builder().build()
         );
     }
+
+    @Test
+    void closePreventsFurtherSyncAndAsyncRequests() {
+        JevClient client = JevClient.builder().apiKey("test-key").build();
+        client.close();
+
+        assertThrows(IllegalStateException.class, () -> client.evaluate(new Object(), List.of()));
+        assertThrows(IllegalStateException.class, () -> client.evaluateAsync(new Object(), List.of()));
+    }
 }
