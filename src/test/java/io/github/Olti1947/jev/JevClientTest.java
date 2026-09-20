@@ -35,4 +35,34 @@ class JevClientTest {
                 () -> client.evaluateAsync(new Object(), List.of()).join());
         assertInstanceOf(IllegalStateException.class, error.getCause());
     }
+
+    @Test
+    void closeIsIdempotentAndSupportsTryWithResources() {
+        JevClient client = JevClient.builder().apiKey("test-key").build();
+
+        assertDoesNotThrow(() -> {
+            client.close();
+            client.close();
+        });
+
+        assertDoesNotThrow(() -> {
+            try (JevClient ignored = JevClient.builder().apiKey("test-key").build()) {
+                // Closing an unused client is safe.
+            }
+        });
+    }
+
+    @Test
+    void evaluateChoiceFailsAfterClose() {
+        JevClient client = JevClient.builder().apiKey("test-key").build();
+        client.close();
+
+        assertThrows(IllegalStateException.class,
+                () -> client.evaluateChoice(new Object(), "Choose an option", TestChoice.class));
+    }
+
+    private enum TestChoice {
+        FIRST,
+        SECOND
+    }
 }
