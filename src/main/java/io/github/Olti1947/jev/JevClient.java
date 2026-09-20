@@ -67,7 +67,11 @@ public class JevClient implements AutoCloseable {
      * Executes an asynchronous evaluation returning a CompletableFuture.
      */
     public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
-        ensureOpen();
+        try {
+            ensureOpen();
+        } catch (IllegalStateException e) {
+            return CompletableFuture.failedFuture(e);
+        }
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
