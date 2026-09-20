@@ -6,10 +6,12 @@ import io.github.Olti1947.jev.exception.JevApiException;
 import io.github.Olti1947.jev.exception.JevSerializationException;
 import io.github.Olti1947.jev.model.*;
 
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -47,10 +49,11 @@ public class JevClient {
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
-            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<InputStream> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
 
             if (response.statusCode() != 200) {
-                throw new JevApiException(response.statusCode(), response.body());
+                String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+                throw new JevApiException(response.statusCode(), errorBody);
             }
 
             return parseResponse(response.body(), primitives);
@@ -68,13 +71,16 @@ public class JevClient {
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
-            return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
+            return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofInputStream())
                     .thenApply(response -> {
-                        if (response.statusCode() != 200) {
-                            throw new JevApiException(response.statusCode(), response.body());
-                        }
                         try {
+                            if (response.statusCode() != 200) {
+                                String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+                                throw new JevApiException(response.statusCode(), errorBody);
+                            }
                             return parseResponse(response.body(), primitives);
+                        } catch (JevApiException e) {
+                            throw e;
                         } catch (Exception e) {
                             throw new JevSerializationException("Failed to deserialize response", e);
                         }
@@ -109,7 +115,7 @@ public class JevClient {
                 .build();
     }
 
-    private JevResponse parseResponse(String body, List<JevPrimitive> primitives) throws Exception {
+    private JevResponse parseResponse(InputStream body, List<JevPrimitive> primitives) throws Exception {
         if (vercelGateway) {
             return GatewayProtocol.parseResponse(objectMapper.readTree(body), primitives, gatewayModel);
         }
