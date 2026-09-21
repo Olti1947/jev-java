@@ -20,13 +20,14 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Entry-point client for interacting with the TypeSafe Jev System One API.
  */
-public class JevClient {
+public class JevClient implements AutoCloseable {
     private final String apiKey;
     private final String baseUrl;
     private final boolean vercelGateway;
     private final String gatewayModel;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private volatile boolean closed;
 
     private JevClient(Builder builder) {
         this.apiKey = builder.apiKey;
@@ -46,6 +47,7 @@ public class JevClient {
      * Executes a synchronous evaluation over state using the specified primitives.
      */
     public JevResponse evaluate(Object state, List<JevPrimitive> primitives) {
+        ensureOpen();
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
@@ -68,6 +70,11 @@ public class JevClient {
      * Executes an asynchronous evaluation returning a CompletableFuture.
      */
     public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
+        try {
+            ensureOpen();
+        } catch (IllegalStateException e) {
+            return CompletableFuture.failedFuture(e);
+        }
         try {
             HttpRequest httpRequest = buildHttpRequest(state, primitives);
 
@@ -134,6 +141,23 @@ public class JevClient {
         JevResponse response = evaluate(state, List.of(choice));
 
         return Enum.valueOf(enumClass, response.choice("choice").choice());
+    }
+
+    /**
+     * Marks this client as closed. Requests already in progress are not cancelled.
+     *
+     * <p>The SDK targets Java 17, where {@link HttpClient} does not expose a close
+     * method. Closing prevents this client from starting further requests.</p>
+     */
+    @Override
+    public void close() {
+        closed = true;
+    }
+
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("JevClient is closed");
+        }
     }
 
     public static Builder builder() {
