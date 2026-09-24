@@ -83,6 +83,28 @@ nested category maps and custom keys are supported. Constructors taking plain
 strings (`new Noul(name, "question")`, `new Score(name, "q", "low", "high")`) are
 unchanged.
 
+## Building a reusable request
+
+`evaluate(state, primitives)` is convenient for a one-off call, but sometimes
+you want to assemble a request in one place (e.g. adding primitives
+conditionally) and execute it in another, or reuse the same request. Build a
+`JevRequest` and hand it to the client:
+
+```java
+JevRequest request = JevRequest.builder()
+    .state(sourceStatePayload)
+    .addPrimitive(invoiceCheck)
+    .addPrimitive(departmentChoice)
+    .build();
+
+JevResponse response = jev.evaluate(request);
+CompletableFuture<JevResponse> future = jev.evaluateAsync(request);
+```
+
+`builder()` defaults `model` to `jev-latest` (override with `.model(...)`) and
+`build()` throws `JevValidationException` if no primitives were added or if two
+primitives share a name.
+
 ## Vercel AI Gateway
 
 Jev is also available through the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/modalities/evaluation),
@@ -99,6 +121,8 @@ JevClient jev = JevClient.builder()
 
 Notes:
 - The gateway model id defaults to `typesafe-ai/jev` and can be overridden with `.gatewayModel(...)`.
+- In gateway mode the model is always the client's `.gatewayModel(...)`, sent as a
+  header; a `JevRequest` built with `.model(...)` is only respected outside gateway mode.
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.olti1947/jev-java.svg)](https://central.sonatype.com/artifact/io.github.olti1947/jev-java)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

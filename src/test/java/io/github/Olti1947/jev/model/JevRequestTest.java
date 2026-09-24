@@ -2,6 +2,7 @@ package io.github.Olti1947.jev.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.Olti1947.jev.exception.JevValidationException;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -68,5 +70,45 @@ class JevRequestTest {
         assertTrue(question.get("criteria").isArray());
         assertEquals("cosmetic", question.get("criteria").get(0).asText());
         assertFalse(question.has("name"));
+    }
+
+    @Test
+    void builderAssemblesRequestWithDefaultModel() {
+        JevRequest request = JevRequest.builder()
+                .state("My card was charged twice.")
+                .addPrimitive(new Noul("is_urgent", "Is this urgent?"))
+                .addPrimitive(new Choice("department", "Which team?", List.of("billing", "support")))
+                .build();
+
+        assertEquals("jev-latest", request.model());
+        assertEquals("My card was charged twice.", request.state());
+        assertEquals(List.of("is_urgent", "department"), List.copyOf(request.questions().keySet()));
+    }
+
+    @Test
+    void builderHonorsExplicitModel() {
+        JevRequest request = JevRequest.builder()
+                .model("custom-model")
+                .state("state")
+                .addPrimitive(new Noul("is_urgent", "Is this urgent?"))
+                .build();
+
+        assertEquals("custom-model", request.model());
+    }
+
+    @Test
+    void builderRejectsDuplicatePrimitiveNames() {
+        JevRequest.Builder builder = JevRequest.builder()
+                .state("state")
+                .addPrimitive(new Noul("dup", "first"));
+
+        assertThrows(JevValidationException.class, () -> builder.addPrimitive(new Noul("dup", "second")));
+    }
+
+    @Test
+    void builderRejectsBuildWithNoPrimitives() {
+        JevRequest.Builder builder = JevRequest.builder().state("state");
+
+        assertThrows(JevValidationException.class, builder::build);
     }
 }
