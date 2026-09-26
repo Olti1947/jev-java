@@ -47,9 +47,27 @@ public class JevClient implements AutoCloseable {
      * Executes a synchronous evaluation over state using the specified primitives.
      */
     public JevResponse evaluate(Object state, List<JevPrimitive> primitives) {
+        return evaluate(new JevRequest(state, primitives));
+    }
+
+    /**
+     * Executes an asynchronous evaluation returning a CompletableFuture.
+     */
+    public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
+        return evaluateAsync(new JevRequest(state, primitives));
+    }
+
+    /**
+     * Executes a synchronous evaluation for a prepared {@link JevRequest}.
+     *
+     * <p>In {@link Builder#vercelGateway() Vercel gateway} mode the model is the
+     * client's configured {@link Builder#gatewayModel(String) gatewayModel}, sent
+     * as a header; {@code request.model()} is only used in native (non-gateway) mode.
+     */
+    public JevResponse evaluate(JevRequest request) {
         ensureOpen();
         try {
-            HttpRequest httpRequest = buildHttpRequest(state, primitives);
+            HttpRequest httpRequest = buildHttpRequest(request);
 
             HttpResponse<InputStream> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
 
@@ -58,7 +76,7 @@ public class JevClient implements AutoCloseable {
                 throw new JevApiException(response.statusCode(), errorBody);
             }
 
-            return parseResponse(response.body(), primitives);
+            return parseResponse(response.body(), request);
         } catch (JevApiException e) {
             throw e;
         } catch (Exception e) {
@@ -67,16 +85,20 @@ public class JevClient implements AutoCloseable {
     }
 
     /**
-     * Executes an asynchronous evaluation returning a CompletableFuture.
+     * Executes an asynchronous evaluation for a prepared {@link JevRequest}.
+     *
+     * <p>In {@link Builder#vercelGateway() Vercel gateway} mode the model is the
+     * client's configured {@link Builder#gatewayModel(String) gatewayModel}, sent
+     * as a header; {@code request.model()} is only used in native (non-gateway) mode.
      */
-    public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
+    public CompletableFuture<JevResponse> evaluateAsync(JevRequest request) {
         try {
             ensureOpen();
         } catch (IllegalStateException e) {
             return CompletableFuture.failedFuture(e);
         }
         try {
-            HttpRequest httpRequest = buildHttpRequest(state, primitives);
+            HttpRequest httpRequest = buildHttpRequest(request);
 
             return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofInputStream())
                     .thenApply(response -> {
@@ -85,7 +107,7 @@ public class JevClient implements AutoCloseable {
                                 String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
                                 throw new JevApiException(response.statusCode(), errorBody);
                             }
-                            return parseResponse(response.body(), primitives);
+                            return parseResponse(response.body(), request);
                         } catch (JevApiException e) {
                             throw e;
                         } catch (Exception e) {
@@ -97,24 +119,25 @@ public class JevClient implements AutoCloseable {
         }
     }
 
-    private HttpRequest buildHttpRequest(Object state, List<JevPrimitive> primitives) throws Exception {
+    private HttpRequest buildHttpRequest(JevRequest request) throws Exception {
+        List<JevPrimitive> primitives = List.copyOf(request.questions().values());
         String jsonBody;
-        HttpRequest.Builder request;
+        HttpRequest.Builder httpRequest;
 
         if (vercelGateway) {
-            jsonBody = objectMapper.writeValueAsString(GatewayProtocol.buildBody(objectMapper, state, primitives));
-            request = HttpRequest.newBuilder()
+            jsonBody = objectMapper.writeValueAsString(GatewayProtocol.buildBody(objectMapper, request.state(), primitives));
+            httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/evaluation-model"))
                     .header("ai-gateway-protocol-version", GatewayProtocol.PROTOCOL_VERSION)
                     .header("ai-evaluation-model-specification-version", GatewayProtocol.SPEC_VERSION)
                     .header("ai-model-id", gatewayModel);
         } else {
-            jsonBody = objectMapper.writeValueAsString(new JevRequest(state, primitives));
-            request = HttpRequest.newBuilder()
+            jsonBody = objectMapper.writeValueAsString(request);
+            httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/v1/systemone"));
         }
 
-        return request
+        return httpRequest
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
                 .header("User-Agent", "jev-java-sdk/1.0.0")
@@ -122,8 +145,9 @@ public class JevClient implements AutoCloseable {
                 .build();
     }
 
-    private JevResponse parseResponse(InputStream body, List<JevPrimitive> primitives) throws Exception {
+    private JevResponse parseResponse(InputStream body, JevRequest request) throws Exception {
         if (vercelGateway) {
+            List<JevPrimitive> primitives = List.copyOf(request.questions().values());
             return GatewayProtocol.parseResponse(objectMapper.readTree(body), primitives, gatewayModel);
         }
         return objectMapper.readValue(body, JevResponse.class);

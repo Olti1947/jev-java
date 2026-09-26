@@ -2,6 +2,8 @@ package io.github.Olti1947.jev;
 
 import io.github.Olti1947.jev.exception.JevValidationException;
 import io.github.Olti1947.jev.model.Choice;
+import io.github.Olti1947.jev.model.JevRequest;
+import io.github.Olti1947.jev.model.Noul;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -33,6 +35,22 @@ class JevClientTest {
         assertThrows(IllegalStateException.class, () -> client.evaluate(new Object(), List.of()));
         CompletionException error = assertThrows(CompletionException.class,
                 () -> client.evaluateAsync(new Object(), List.of()).join());
+        assertInstanceOf(IllegalStateException.class, error.getCause());
+    }
+
+    @Test
+    void closePreventsFurtherRequestBasedSyncAndAsyncRequests() {
+        JevClient client = JevClient.builder().apiKey("test-key").build();
+        client.close();
+
+        JevRequest request = JevRequest.builder()
+                .state(new Object())
+                .addPrimitive(new Noul("is_urgent", "Is this urgent?"))
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> client.evaluate(request));
+        CompletionException error = assertThrows(CompletionException.class,
+                () -> client.evaluateAsync(request).join());
         assertInstanceOf(IllegalStateException.class, error.getCause());
     }
 
