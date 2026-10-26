@@ -37,3 +37,10 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+.env
+
+### Local javac build (no Maven) ###
+out/
+out-test/
+lib/

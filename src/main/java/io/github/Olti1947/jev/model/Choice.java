@@ -3,6 +3,7 @@ package io.github.Olti1947.jev.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.Olti1947.jev.exception.JevValidationException;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,10 +40,16 @@ public record Choice(
             throw new JevValidationException(
                     "Choice supports a maximum of " + MAX_OPTIONS + " options.");
         }
+        if (criteria.keySet().stream().anyMatch(option -> option == null || option.isBlank())) {
+            throw new JevValidationException("Choice option name must not be blank.");
+        }
+        criteria = Collections.unmodifiableMap(new LinkedHashMap<String, Object>(criteria));
     }
 
     /**
      * Convenience constructor for options without descriptions.
+     *
+     * @throws JevValidationException if an option is listed more than once
      */
     public Choice(String name, Object instructions, List<String> options) {
         this(name, instructions, toCriteria(options));
@@ -53,7 +60,12 @@ public record Choice(
             return null;
         }
         Map<String, String> criteria = new LinkedHashMap<>();
-        options.forEach(option -> criteria.put(option, null));
+        for (String option : options) {
+            if (criteria.containsKey(option)) {
+                throw new JevValidationException("Choice option '" + option + "' is already defined.");
+            }
+            criteria.put(option, null);
+        }
         return criteria;
     }
 

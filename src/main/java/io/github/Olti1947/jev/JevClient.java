@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.Olti1947.jev.exception.JevApiException;
 import io.github.Olti1947.jev.exception.JevSerializationException;
+import io.github.Olti1947.jev.exception.JevValidationException;
 import io.github.Olti1947.jev.model.*;
 
 import java.io.InputStream;
@@ -45,6 +46,9 @@ public class JevClient implements AutoCloseable {
 
     /**
      * Executes a synchronous evaluation over state using the specified primitives.
+     *
+     * @throws JevValidationException if {@code state} is null, {@code primitives}
+     *         is empty, or two primitives share a name
      */
     public JevResponse evaluate(Object state, List<JevPrimitive> primitives) {
         return evaluate(new JevRequest(state, primitives));
@@ -52,9 +56,18 @@ public class JevClient implements AutoCloseable {
 
     /**
      * Executes an asynchronous evaluation returning a CompletableFuture.
+     *
+     * <p>Invalid input (see {@link #evaluate(Object, List)}) completes the returned
+     * future exceptionally with a {@link JevValidationException}.
      */
     public CompletableFuture<JevResponse> evaluateAsync(Object state, List<JevPrimitive> primitives) {
-        return evaluateAsync(new JevRequest(state, primitives));
+        JevRequest request;
+        try {
+            request = new JevRequest(state, primitives);
+        } catch (JevValidationException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return evaluateAsync(request);
     }
 
     /**
@@ -63,9 +76,12 @@ public class JevClient implements AutoCloseable {
      * <p>In {@link Builder#vercelGateway() Vercel gateway} mode the model is the
      * client's configured {@link Builder#gatewayModel(String) gatewayModel}, sent
      * as a header; {@code request.model()} is only used in native (non-gateway) mode.
+     *
+     * @throws JevValidationException if {@code request} is null
      */
     public JevResponse evaluate(JevRequest request) {
         ensureOpen();
+        requireRequest(request);
         try {
             HttpRequest httpRequest = buildHttpRequest(request);
 
@@ -90,11 +106,14 @@ public class JevClient implements AutoCloseable {
      * <p>In {@link Builder#vercelGateway() Vercel gateway} mode the model is the
      * client's configured {@link Builder#gatewayModel(String) gatewayModel}, sent
      * as a header; {@code request.model()} is only used in native (non-gateway) mode.
+     * A null {@code request} completes the returned future exceptionally with a
+     * {@link JevValidationException}.
      */
     public CompletableFuture<JevResponse> evaluateAsync(JevRequest request) {
         try {
             ensureOpen();
-        } catch (IllegalStateException e) {
+            requireRequest(request);
+        } catch (IllegalStateException | JevValidationException e) {
             return CompletableFuture.failedFuture(e);
         }
         try {
@@ -116,6 +135,12 @@ public class JevClient implements AutoCloseable {
                     });
         } catch (Exception e) {
             return CompletableFuture.failedFuture(new JevSerializationException("Failed to serialize request", e));
+        }
+    }
+
+    private static void requireRequest(JevRequest request) {
+        if (request == null) {
+            throw new JevValidationException("JevRequest must not be null.");
         }
     }
 

@@ -102,8 +102,10 @@ CompletableFuture<JevResponse> future = jev.evaluateAsync(request);
 ```
 
 `builder()` defaults `model` to `jev-latest` (override with `.model(...)`) and
-`build()` throws `JevValidationException` if no primitives were added or if two
-primitives share a name.
+`build()` throws `JevValidationException` if no state was set, no primitives were
+added, or two primitives share a name. `evaluate(state, primitives)` applies the
+same checks before sending anything; `evaluateAsync` reports them through the
+returned future.
 
 ## Vercel AI Gateway
 

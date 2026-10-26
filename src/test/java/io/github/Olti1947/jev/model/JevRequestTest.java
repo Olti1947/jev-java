@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.Olti1947.jev.exception.JevValidationException;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -110,5 +112,65 @@ class JevRequestTest {
         JevRequest.Builder builder = JevRequest.builder().state("state");
 
         assertThrows(JevValidationException.class, builder::build);
+    }
+
+    @Test
+    void builderRejectsBuildWithoutState() {
+        JevRequest.Builder builder = JevRequest.builder()
+                .addPrimitive(new Noul("is_urgent", "Is this urgent?"));
+
+        assertThrows(JevValidationException.class, builder::build);
+    }
+
+    @Test
+    void builderRejectsNullPrimitive() {
+        assertThrows(JevValidationException.class, () -> JevRequest.builder().addPrimitive(null));
+    }
+
+    // --- validation -----------------------------------------------------
+
+    @Test
+    void rejectsNullState() {
+        assertThrows(JevValidationException.class, () ->
+                new JevRequest(null, List.of(new Noul("is_urgent", "Is this urgent?"))));
+    }
+
+    @Test
+    void rejectsMissingPrimitives() {
+        assertThrows(JevValidationException.class, () -> new JevRequest("state", List.of()));
+        assertThrows(JevValidationException.class, () -> new JevRequest("state", null));
+    }
+
+    @Test
+    void rejectsNullPrimitive() {
+        assertThrows(JevValidationException.class, () ->
+                new JevRequest("state", Arrays.asList(new Noul("is_urgent", "Is this urgent?"), null)));
+    }
+
+    @Test
+    void rejectsDuplicatePrimitiveNames() {
+        // Questions are keyed by name, so a duplicate would silently drop one of them.
+        assertThrows(JevValidationException.class, () -> new JevRequest("state", List.of(
+                new Noul("a", "?"),
+                new Choice("a", "?", List.of("x", "y")))));
+    }
+
+    @Test
+    void rejectsQuestionKeyThatDiffersFromPrimitiveName() {
+        assertThrows(JevValidationException.class, () ->
+                new JevRequest("jev-latest", "state", Map.of("a", new Noul("b", "?"))));
+    }
+
+    @Test
+    void copiesQuestionsDefensively() {
+        Map<String, JevPrimitive> questions = new LinkedHashMap<>();
+        questions.put("is_urgent", new Noul("is_urgent", "Is this urgent?"));
+        JevRequest request = new JevRequest("jev-latest", "state", questions);
+
+        questions.put("other", new Noul("other", "?"));
+
+        assertEquals(List.of("is_urgent"), List.copyOf(request.questions().keySet()));
+        assertThrows(UnsupportedOperationException.class, () ->
+                request.questions().put("other", new Noul("other", "?")));
     }
 }
